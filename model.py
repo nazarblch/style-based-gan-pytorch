@@ -405,35 +405,15 @@ class Generator(nn.Module):
 
         # self.blur = Blur()
 
-    def forward(self, style, noise, step=0, alpha=-1, mixing_range=(-1, -1)):
+    def forward(self, style, noise, step=0, alpha=-1):
         out = noise[0]
 
-        if len(style) < 2:
-            inject_index = [len(self.progression) + 1]
-
-        else:
-            inject_index = random.sample(list(range(step)), len(style) - 1)
-
-        crossover = 0
-
         for i, (conv, to_rgb) in enumerate(zip(self.progression, self.to_rgb)):
-            if mixing_range == (-1, -1):
-                if crossover < len(inject_index) and i > inject_index[crossover]:
-                    crossover = min(crossover + 1, len(style))
-
-                style_step = style[crossover]
-
-            else:
-                if mixing_range[0] <= i <= mixing_range[1]:
-                    style_step = style[1]
-
-                else:
-                    style_step = style[0]
 
             if i > 0 and step > 0:
                 out_prev = out
-                
-            out = conv(out, style_step, noise[i])
+
+            out = conv(out, style[i], noise[i])
 
             if i == step:
                 out = to_rgb(out)
@@ -495,7 +475,33 @@ class StyledGenerator(nn.Module):
 
             styles = styles_norm
 
-        return self.generator(styles, noise, step, alpha, mixing_range=mixing_range)
+        styles_stack = []
+
+        if len(styles) < 2:
+            inject_index = [10]
+
+        else:
+            inject_index = random.sample(list(range(step)), len(styles) - 1)
+
+        crossover = 0
+
+        for i in range(step + 1):
+            if mixing_range == (-1, -1):
+                if crossover < len(inject_index) and i > inject_index[crossover]:
+                    crossover = min(crossover + 1, len(styles))
+
+                style_step = styles[crossover]
+
+            else:
+                if mixing_range[0] <= i <= mixing_range[1]:
+                    style_step = styles[1]
+
+                else:
+                    style_step = styles[0]
+
+            styles_stack.append(style_step)
+
+        return self.generator(styles_stack, noise, step, alpha)
 
     def mean_style(self, input):
         style = self.style(input).mean(0, keepdim=True)

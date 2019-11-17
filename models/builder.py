@@ -2,6 +2,7 @@ from typing import Tuple, List, Dict, Callable, Set
 from torch import nn, Tensor
 import torch
 import itertools
+from graphviz import Digraph
 
 
 class NamedModule(nn.Module):
@@ -29,6 +30,9 @@ class NamedModule(nn.Module):
         return self.forward(name2tensor)
 
 
+
+
+
 class NamedModuleObject(NamedModule):
 
     def __init__(self, module: nn.ModuleList,
@@ -40,9 +44,6 @@ class NamedModuleObject(NamedModule):
 
     def forward(self, name2tensor: Dict[str, Tensor]):
         return self.fwd(name2tensor)
-
-
-
 
 
 class OutputMemory:
@@ -72,16 +73,25 @@ class ModuleBuilder:
         self.edges: List[Tuple[List[str], str]] = []
 
     def find_children(self, nodes: Set[str]) -> Set[str]:
-        ch = set(map(lambda e: e[1], filter(lambda e: len(set(e[0]) & nodes) > 0, self.edges)))
+        ch = set(map(lambda e: e[1], filter(lambda e: len(set(e[0]) & nodes) == len(e[0]), self.edges)))
         return set(filter(lambda n: n not in nodes, ch))
+
+    def find_parents(self, nodes: Set[str]) -> Set[str]:
+        prnt = itertools.chain(*[e[0] for e in filter(lambda e: e[1] in nodes, self.edges)])
+        return set(filter(lambda n: n not in nodes, prnt))
 
     def are_linked(self, n1: str, n2: str):
 
         if n1 == n2:
             return True
 
-        dep_edges = [e[0] for e in filter(lambda e: e[1] == name, self.edges)]
+        dep_edges = itertools.chain(*[e[0] for e in filter(lambda e: e[1] == n2, self.edges)])
 
+        for ni in dep_edges:
+            if self.are_linked(n1, ni):
+                return True
+
+        return False
 
     def sub_graph(self, input_nodes: List[str], output: str):
         sub_graph = ModuleBuilder()
@@ -90,11 +100,23 @@ class ModuleBuilder:
         new_nodes = self.find_children(cur_nodes)
 
         while len(new_nodes) > 0:
-            cur_nodes += new_nodes
+            cur_nodes.update(new_nodes)
             new_nodes = self.find_children(cur_nodes)
 
+        parent = set([output])
+        new_parent = self.find_parents(parent)
+
+        while len(new_parent) > 0:
+            parent.update(new_parent)
+            new_parent = self.find_parents(parent)
+
+        cur_nodes = cur_nodes & parent
+
+        assert output in cur_nodes
+        assert len(set(input_nodes) & cur_nodes) == len(input_nodes)
+
         nodes = dict([(node, self.nodes[node]) for node in cur_nodes])
-        edges = filter(lambda e: len(set(e[0]) & cur_nodes) > 0, self.edges)
+        edges = list(filter(lambda e: len(set(e[0]) & cur_nodes) == len(e[0]) and e[1] in cur_nodes, self.edges))
 
         sub_graph.nodes = nodes
         sub_graph.edges = edges
@@ -118,7 +140,7 @@ class ModuleBuilder:
         else:
             deps = self.get_dependent_nodes(name)
             input = {}
-            for d in memory.filter(deps):
+            for d in deps:
                 res_d = self.compute(d, memory)
                 assert len(input.keys() & res_d.keys()) == 0
                 input.update(res_d)
@@ -128,7 +150,7 @@ class ModuleBuilder:
             return out
 
     def build(self, input_nodes: List[str], output_name: str) -> NamedModule:
-        sub_builder = self.sub_graph(input_nodes)
+        sub_builder = self.sub_graph(input_nodes, output_name)
 
         def fwd(input: Dict[str, Tensor]) -> Dict[str, Tensor]:
             memory = OutputMemory()
@@ -152,6 +174,19 @@ class ModuleBuilder:
             to_names,
             fwd
         )
+
+    def plot(self, name):
+
+        g = Digraph('G')
+        g.attr(compound='true')
+
+        for e in self.edges:
+            g.node(e[1])
+            for ei in e[0]:
+                g.node(ei)
+                g.edge(ei, e[1])
+
+        g.render(name, "/tmp/pycharm_project_0/")
 
 
 
