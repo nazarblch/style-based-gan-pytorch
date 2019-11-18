@@ -127,7 +127,24 @@ class ModuleBuilder:
         self.nodes[name] = NamedModule(module, from_names, to_names)
 
     def add_edge(self, from_names: List[str], to_name: str):
+        for name in from_names + [to_name]:
+            assert name in self.nodes
+        collected_from = list(itertools.chain(*[self.nodes[name].to_names for name in from_names]))
+        assert len(set(collected_from)) == len(collected_from)
+        collected_from = set(collected_from)
+        input_names = set(self.nodes[to_name].from_names)
+        assert len(collected_from & input_names) == len(input_names)
         self.edges.append((from_names, to_name))
+
+    def add_module_seq(self,
+                       indices: List[int],
+                       constructor: Callable[
+                           [int],
+                           Tuple[str, nn.Module, List[str], List[str]]
+                       ]):
+        for i in indices:
+            name, module, from_names, to_names = constructor(i)
+            self.add_module(name, module, from_names, to_names)
 
     def get_dependent_nodes(self, name: str) -> List[str]:
         dep_edges = [e[0] for e in filter(lambda e: e[1] == name, self.edges)]
@@ -138,6 +155,7 @@ class ModuleBuilder:
         if name in memory.data:
             return memory.data[name]
         else:
+            print("compute: " + name)
             deps = self.get_dependent_nodes(name)
             input = {}
             for d in deps:

@@ -70,16 +70,20 @@ class Identity(nn.Module):
 builder3 = ModuleBuilder()
 
 builder3.add_module("input_1", Identity(), ["input", "style1", "noise1"], ["out1", "style1", "noise1"])
-builder3.add_module("input_2", Identity(), ["style2", "noise2"], ["style2", "noise2"])
-builder3.add_module("input_3", Identity(), ["style3", "noise3"], ["style3", "noise3"])
-builder3.add_module("input_4", Identity(), ["style4", "noise4"], ["style4", "noise4"])
-builder3.add_module("input_5", Identity(), ["style5", "noise5"], ["style5", "noise5"])
+builder3.add_module_seq(
+    [2, 3, 4, 5],
+    lambda i: ("input_%d" % i, Identity(), ["style%d" % i, "noise%d" % i], ["style%d" % i, "noise%d" % i])
+)
 
-builder3.add_module("progression_1", StyledConvBlock(512, 512, 3, 1, initial=True), ["out1", "style1", "noise1"], ["out2"])
-builder3.add_module("progression_2", StyledConvBlock(512, 512, 3, 1, upsample=True), ["out2", "style2", "noise2"], ["out3"])
-builder3.add_module("progression_3", StyledConvBlock(512, 512, 3, 1, upsample=True), ["out3", "style3", "noise3"], ["out4"])
-builder3.add_module("progression_4", StyledConvBlock(512, 512, 3, 1, upsample=True), ["out4", "style4", "noise4"], ["out5"])
-builder3.add_module("progression_5", StyledConvBlock(512, 256, 3, 1, upsample=True), ["out5", "style5", "noise5"], ["out6"])
+builder3.add_module("progression_1", StyledConvBlock(512, 512, 3, 1, initial=True),  ["out1", "style1", "noise1"], ["out2"])
+builder3.add_module_seq(
+    [2, 3, 4, 5],
+    lambda i: ("progression_%d" % i,
+               StyledConvBlock(512 if i < 6 else 512 // (2**(i-5)), 512 if i < 5 else 512 // (2**(i-4)), 3, 1, upsample=True),
+               ["out%d" % i, "style%d" % i, "noise%d" % i],
+               ["out%d" % (i+1)])
+)
+
 
 builder3.add_edge(["input_1"], "progression_1")
 
@@ -88,11 +92,13 @@ builder3.add_edge(["input_3", "progression_2"], "progression_3")
 builder3.add_edge(["input_4", "progression_3"], "progression_4")
 builder3.add_edge(["input_5", "progression_4"], "progression_5")
 
-builder3.add_module("to_rgb_1", EqualConv2d(512, 3, 1), ["out2"], ["out_rgb1"])
-builder3.add_module("to_rgb_2", EqualConv2d(512, 3, 1), ["out3"], ["out_rgb2"])
-builder3.add_module("to_rgb_3", EqualConv2d(512, 3, 1), ["out4"], ["out_rgb3"])
-builder3.add_module("to_rgb_4", EqualConv2d(512, 3, 1), ["out5"], ["out_rgb4"])
-builder3.add_module("to_rgb_5", EqualConv2d(256, 3, 1), ["out6"], ["out_rgb5"])
+builder3.add_module_seq(
+    [1, 2, 3, 4, 5],
+    lambda i: ("to_rgb_%d" % i,
+               EqualConv2d(512 if i < 5 else 512 // (2**(i-4)), 3, 1),
+               ["out%d" % (i+1)],
+               ["out_rgb%d" % i])
+)
 
 builder3.add_edge(["progression_1"], "to_rgb_1")
 builder3.add_edge(["progression_2"], "to_rgb_2")
@@ -102,10 +108,13 @@ builder3.add_edge(["progression_5"], "to_rgb_5")
 
 alpha = 0.4
 builder3.add_module("alpha_mix_1", Identity(), ["out_rgb1"], ["out_rgb1"])
-builder3.add_module("alpha_mix_2", AlphaMix(alpha), ["out_rgb1", "out_rgb2"], ["out_rgb2"])
-builder3.add_module("alpha_mix_3", AlphaMix(alpha), ["out_rgb2", "out_rgb3"], ["out_rgb3"])
-builder3.add_module("alpha_mix_4", AlphaMix(alpha), ["out_rgb3", "out_rgb4"], ["out_rgb4"])
-builder3.add_module("alpha_mix_5", AlphaMix(alpha), ["out_rgb4", "out_rgb5"], ["out_rgb5"])
+builder3.add_module_seq(
+    [2, 3, 4, 5],
+    lambda i: ("alpha_mix_%d" % i,
+               AlphaMix(alpha),
+               ["out_rgb%d" % (i-1), "out_rgb%d" % i],
+               ["out_rgb%d" % i])
+)
 
 builder3.add_edge(["to_rgb_1", "to_rgb_2"], "alpha_mix_2")
 builder3.add_edge(["to_rgb_2", "to_rgb_3"], "alpha_mix_3")
