@@ -146,6 +146,16 @@ class ModuleBuilder:
             name, module, from_names, to_names = constructor(i)
             self.add_module(name, module, from_names, to_names)
 
+    def add_edge_seq(self,
+                       indices: List[int],
+                       constructor: Callable[
+                           [int],
+                           Tuple[List[str], str]
+                       ]):
+        for i in indices:
+            from_names, to_name = constructor(i)
+            self.add_edge(from_names, to_names)
+
     def get_dependent_nodes(self, name: str) -> List[str]:
         dep_edges = [e[0] for e in filter(lambda e: e[1] == name, self.edges)]
         assert len(dep_edges) == 1
