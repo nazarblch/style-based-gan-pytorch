@@ -32,7 +32,7 @@ def accumulate(model1, model2, decay=0.999):
 
 def sample_data(dataset, batch_size, image_size=4):
     dataset.resolution = image_size
-    loader = DataLoader(dataset, shuffle=True, batch_size=batch_size, num_workers=1)
+    loader = DataLoader(dataset, shuffle=True, batch_size=batch_size, num_workers=8)
 
     return loader
 
@@ -252,7 +252,7 @@ def train(args, dataset, generator, discriminator):
 
 if __name__ == '__main__':
     code_size = 512
-    batch_size = 16
+    batch_size = 32
     n_critic = 1
 
     parser = argparse.ArgumentParser(description='Progressive Growing of GANs')
@@ -261,13 +261,13 @@ if __name__ == '__main__':
     parser.add_argument(
         '--phase',
         type=int,
-        default=600_000,
+        default=50_000,
         help='number of samples used for each training phases',
     )
     parser.add_argument('--lr', default=0.001, type=float, help='learning rate')
     parser.add_argument('--sched', action='store_true', help='use lr scheduling')
     parser.add_argument('--init_size', default=8, type=int, help='initial image size')
-    parser.add_argument('--max_size', default=1024, type=int, help='max image size')
+    parser.add_argument('--max_size', default=256, type=int, help='max image size')
     parser.add_argument(
         '--ckpt', default=None, type=str, help='load from previous checkpoints'
     )
@@ -288,6 +288,8 @@ if __name__ == '__main__':
     )
 
     args = parser.parse_args()
+
+    print(args)
 
     generator = nn.DataParallel(StyledGenerator(code_size)).cuda()
     discriminator = nn.DataParallel(

@@ -3,8 +3,9 @@ import unittest
 from torch import nn
 
 from model import Generator, EqualConv2d, StyledConvBlock
-from models.builder import ModuleBuilder
-from models.generator import AlphaMix
+from models.builder import ModuleBuilder, Identity
+from models.discriminator import DiscriminatorBuilder
+from models.generator import AlphaMix, GeneratorBuilder
 
 builder = ModuleBuilder()
 
@@ -59,14 +60,6 @@ builder2.add_edge(["4"], "5")
 builder2.add_edge(["4"], "6")
 
 
-class Identity(nn.Module):
-    def __init__(self, *args, **kwargs):
-        super(Identity, self).__init__()
-
-    def forward(self, *input):
-        return input
-
-
 builder3 = ModuleBuilder()
 
 builder3.add_module("input_1", Identity(), ["input", "style1", "noise1"], ["out1", "style1", "noise1"])
@@ -86,11 +79,7 @@ builder3.add_module_seq(
 
 
 builder3.add_edge(["input_1"], "progression_1")
-
-builder3.add_edge(["input_2", "progression_1"], "progression_2")
-builder3.add_edge(["input_3", "progression_2"], "progression_3")
-builder3.add_edge(["input_4", "progression_3"], "progression_4")
-builder3.add_edge(["input_5", "progression_4"], "progression_5")
+builder3.add_edge_seq([2, 3, 4, 5], lambda i: ([f"input_{i}", f"progression_{i-1}"], f"progression_{i}"))
 
 builder3.add_module_seq(
     [1, 2, 3, 4, 5],
@@ -100,11 +89,8 @@ builder3.add_module_seq(
                ["out_rgb%d" % i])
 )
 
-builder3.add_edge(["progression_1"], "to_rgb_1")
-builder3.add_edge(["progression_2"], "to_rgb_2")
-builder3.add_edge(["progression_3"], "to_rgb_3")
-builder3.add_edge(["progression_4"], "to_rgb_4")
-builder3.add_edge(["progression_5"], "to_rgb_5")
+
+builder3.add_edge_seq([1, 2, 3, 4, 5], lambda i: ([f"progression_{i}"], f"to_rgb_{i}"))
 
 alpha = 0.4
 builder3.add_module("alpha_mix_1", Identity(), ["out_rgb1"], ["out_rgb1"])
@@ -116,10 +102,7 @@ builder3.add_module_seq(
                ["out_rgb%d" % i])
 )
 
-builder3.add_edge(["to_rgb_1", "to_rgb_2"], "alpha_mix_2")
-builder3.add_edge(["to_rgb_2", "to_rgb_3"], "alpha_mix_3")
-builder3.add_edge(["to_rgb_3", "to_rgb_4"], "alpha_mix_4")
-builder3.add_edge(["to_rgb_4", "to_rgb_5"], "alpha_mix_5")
+builder3.add_edge_seq([2, 3, 4, 5], lambda i: ([f"to_rgb_{i-1}", f"to_rgb_{i}"], f"alpha_mix_{i}"))
 
 builder3.plot("gen")
 
@@ -156,9 +139,13 @@ class TestBuilder(unittest.TestCase):
 
     def test_generator(self):
 
-        step = 2
+        step = 6
 
         style = [
+            torch.randn(2, 512),
+            torch.randn(2, 512),
+            torch.randn(2, 512),
+            torch.randn(2, 512),
             torch.randn(2, 512),
             torch.randn(2, 512),
             torch.randn(2, 512),
@@ -170,27 +157,55 @@ class TestBuilder(unittest.TestCase):
             size = 4 * 2 ** i
             noise.append(torch.randn(2, 1, size, size))
 
-        g1 = builder3.build(["input_1", "input_2", "input_3"], "alpha_mix_3")
+        # g1 = builder3.build(["input_1", "input_2", "input_3"], "alpha_mix_3")
+        b = GeneratorBuilder(alpha=alpha)
+        g1 = b.build(step)
+
         fake1 = g1.forward({
             "input": noise[0],
             "style1": style[0],
             "style2": style[1],
             "style3": style[2],
+            "style4": style[3],
+            "style5": style[4],
+            "style6": style[5],
+            "style7": style[6],
             "noise1": noise[0],
             "noise2": noise[1],
-            "noise3": noise[2]
-        })["out_rgb3"]
+            "noise3": noise[2],
+            "noise4": noise[3],
+            "noise5": noise[4],
+            "noise6": noise[5],
+            "noise7": noise[6]
+        })["out_rgb7"]
 
         g = Generator(512)
-        g.progression[0] = builder3.nodes["progression_1"].module
-        g.progression[1] = builder3.nodes["progression_2"].module
-        g.progression[2] = builder3.nodes["progression_3"].module
-        g.progression[3] = builder3.nodes["progression_4"].module
-        g.to_rgb[0] = builder3.nodes["to_rgb_1"].module
-        g.to_rgb[1] = builder3.nodes["to_rgb_2"].module
-        g.to_rgb[2] = builder3.nodes["to_rgb_3"].module
-        g.to_rgb[3] = builder3.nodes["to_rgb_4"].module
+        g.progression[0] = b.builder.nodes["progression_1"].module
+        g.progression[1] = b.builder.nodes["progression_2"].module
+        g.progression[2] = b.builder.nodes["progression_3"].module
+        g.progression[3] = b.builder.nodes["progression_4"].module
+        g.progression[4] = b.builder.nodes["progression_5"].module
+        g.progression[5] = b.builder.nodes["progression_6"].module
+        g.progression[6] = b.builder.nodes["progression_7"].module
+        g.to_rgb[0] = b.builder.nodes["to_rgb_1"].module
+        g.to_rgb[1] = b.builder.nodes["to_rgb_2"].module
+        g.to_rgb[2] = b.builder.nodes["to_rgb_3"].module
+        g.to_rgb[3] = b.builder.nodes["to_rgb_4"].module
+        g.to_rgb[4] = b.builder.nodes["to_rgb_5"].module
+        g.to_rgb[5] = b.builder.nodes["to_rgb_6"].module
+        g.to_rgb[6] = b.builder.nodes["to_rgb_7"].module
 
         fake = g.forward(style, noise, step, alpha)
 
         self.assertTrue((fake - fake1).abs().max().item() < 1e-5)
+
+    def test_discriminator(self):
+
+        b = DiscriminatorBuilder(alpha=alpha)
+        b.builder.plot("disc")
+        disc = b.build(3)
+        print(disc.from_names)
+        images = torch.randn(5, 3, 32, 32)
+        res = disc.forward({"rgb4": images})
+        print(res['out_pr0'].shape)
+

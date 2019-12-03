@@ -30,7 +30,12 @@ class NamedModule(nn.Module):
         return self.forward(name2tensor)
 
 
+class Identity(nn.Module):
+    def __init__(self, *args, **kwargs):
+        super(Identity, self).__init__()
 
+    def forward(self, *input):
+        return input
 
 
 class NamedModuleObject(NamedModule):
@@ -154,7 +159,7 @@ class ModuleBuilder:
                        ]):
         for i in indices:
             from_names, to_name = constructor(i)
-            self.add_edge(from_names, to_names)
+            self.add_edge(from_names, to_name)
 
     def get_dependent_nodes(self, name: str) -> List[str]:
         dep_edges = [e[0] for e in filter(lambda e: e[1] == name, self.edges)]
